@@ -12,3 +12,9 @@ def benchmark():
     from bert_serving.server.helper import get_run_args, get_benchmark_parser
     args = get_run_args(get_benchmark_parser)
     run_benchmark(args)
+
+if __name__ == "__main__":
+	import sys
+	print("Hello, world!!!")
+	print(sys.argv)
+	main()

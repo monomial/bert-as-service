@@ -1,0 +1,12 @@
+{
+  "ExpandedNodes": [
+    "",
+    "\\server",
+    "\\server\\bert_serving",
+    "\\server\\bert_serving\\server",
+    "\\server\\bert_serving\\server\\bert",
+    "\\server\\bert_serving\\server\\cli"
+  ],
+  "SelectedNode": "\\server\\runserver.py",
+  "PreviewInSolutionExplorer": false
+}
