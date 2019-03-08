@@ -119,3 +119,5 @@ toy*.py
 .DS_Store
 toy*.py
 post/
+
+\.vs/
