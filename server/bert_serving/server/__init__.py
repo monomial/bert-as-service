@@ -424,6 +424,7 @@ class BertWorker(Process):
         self.bert_config = graph_config
         self.use_fp16 = args.fp16
         self.show_tokens_to_client = args.show_tokens_to_client
+        self.squad = args.squad
 
     def close(self):
         self.logger.info('shutting down...')

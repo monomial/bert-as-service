@@ -61,19 +61,38 @@ def optimize_graph(args, logger=None):
         input_ids = tf.placeholder(tf.int32, (None, None), 'input_ids')
         input_mask = tf.placeholder(tf.int32, (None, None), 'input_mask')
         input_type_ids = tf.placeholder(tf.int32, (None, None), 'input_type_ids')
+        
+        ####################
+        # squad
+        segment_ids = tf.placeholder(tf.int64, (None, None), 'segment_ids')
+        unique_ids = tf.placeholder(tf.int64, (None), 'unique_ids')
+        ###############
 
         jit_scope = tf.contrib.compiler.jit.experimental_jit_scope if args.xla else contextlib.suppress
 
         with jit_scope():
-            input_tensors = [input_ids, input_mask, input_type_ids]
+            input_tensors = None
 
-            model = modeling.BertModel(
-                config=bert_config,
-                is_training=False,
-                input_ids=input_ids,
-                input_mask=input_mask,
-                token_type_ids=input_type_ids,
-                use_one_hot_embeddings=False)
+            if args.squad:
+                logger.info("building squad graph")
+                input_tensors = [input_ids, input_mask, segment_ids]
+                model = modeling.BertModel(
+                        config=bert_config,
+                        is_training=False,
+                        input_ids=input_ids,
+                        input_mask=input_mask,
+                        token_type_ids=segment_ids,
+                        use_one_hot_embeddings=False
+                    )
+            else:
+                input_tensors = [input_ids, input_mask, input_type_ids]
+                model = modeling.BertModel(
+                    config=bert_config,
+                    is_training=False,
+                    input_ids=input_ids,
+                    input_mask=input_mask,
+                    token_type_ids=input_type_ids,
+                    use_one_hot_embeddings=False)
 
             tvars = tf.trainable_variables()
 

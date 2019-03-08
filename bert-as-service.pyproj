@@ -11,7 +11,7 @@
     <OutputPath>.</OutputPath>
     <ProjectTypeGuids>{888888a0-9f3d-457c-b088-3a5042f75d52}</ProjectTypeGuids>
     <LaunchProvider>Standard Python launcher</LaunchProvider>
-    <InterpreterId>CondaEnv|CondaEnv|py36_tf_avx2</InterpreterId>
+    <InterpreterId>CondaEnv|CondaEnv|py36</InterpreterId>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)' == 'Debug'" />
   <PropertyGroup Condition="'$(Configuration)' == 'Release'" />
@@ -60,6 +60,7 @@
     <Compile Include="server\bert_serving\server\bert\extract_features.py" />
     <Compile Include="server\bert_serving\server\bert\modeling.py" />
     <Compile Include="server\bert_serving\server\bert\optimization.py" />
+    <Compile Include="server\bert_serving\server\bert\run_squad.py" />
     <Compile Include="server\bert_serving\server\bert\tokenization.py" />
     <Compile Include="server\bert_serving\server\bert\__init__.py" />
     <Compile Include="server\bert_serving\server\cli\__init__.py" />
@@ -92,7 +93,7 @@
     <Folder Include="server\bert_serving\server\cli" />
   </ItemGroup>
   <ItemGroup>
-    <InterpreterReference Include="CondaEnv|CondaEnv|py36_tf_avx2" />
+    <InterpreterReference Include="CondaEnv|CondaEnv|py36" />
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
 </Project>
