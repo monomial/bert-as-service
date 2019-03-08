@@ -452,6 +452,90 @@ class BertWorker(Process):
                 'client_id': features['client_id'],
                 'encodes': output[0]
             })
+        
+        def create_model_squad(input_ids, input_mask, segment_ids, use_one_hot_embeddings):
+            """Creates a classification model for SQuAD."""
+            model = modeling.BertModel(
+                config=self.bert_config,
+                is_training=False,
+                input_ids=input_ids,
+                input_mask=input_mask,
+                token_type_ids=segment_ids,
+                use_one_hot_embeddings=use_one_hot_embeddings)
+
+            final_hidden = model.get_sequence_output()
+
+            final_hidden_shape = modeling.get_shape_list(final_hidden, expected_rank=3)
+            batch_size = final_hidden_shape[0]
+            seq_length = final_hidden_shape[1]
+            hidden_size = final_hidden_shape[2]
+
+            output_weights = tf.get_variable(
+                "cls/squad/output_weights", [2, hidden_size],
+                initializer=tf.truncated_normal_initializer(stddev=0.02))
+
+            output_bias = tf.get_variable(
+                "cls/squad/output_bias", [2], initializer=tf.zeros_initializer())
+
+            final_hidden_matrix = tf.reshape(final_hidden,
+                                            [batch_size * seq_length, hidden_size])
+            logits = tf.matmul(final_hidden_matrix, output_weights, transpose_b=True)
+            logits = tf.nn.bias_add(logits, output_bias)
+
+            logits = tf.reshape(logits, [batch_size, seq_length, 2])
+            logits = tf.transpose(logits, [2, 0, 1])
+
+            unstacked_logits = tf.unstack(logits, axis=0)
+
+            (start_logits, end_logits) = (unstacked_logits[0], unstacked_logits[1])
+
+            return (start_logits, end_logits)
+
+        def model_fn_squad(features, labels, mode, params):  # pylint: disable=unused-argument
+            """The squad version of `model_fn`."""
+
+            tf.logging.info("*** Features ***")
+            for name in sorted(features.keys()):
+                tf.logging.info("  name = %s, shape = %s" % (name, features[name].shape))
+
+            unique_ids = features["unique_ids"]
+            input_ids = features["input_ids"]
+            input_mask = features["input_mask"]
+            segment_ids = features["segment_ids"]
+
+            (start_logits, end_logits) = create_model_squad(
+                input_ids=input_ids,
+                input_mask=input_mask,
+                segment_ids=segment_ids,
+                use_one_hot_embeddings=use_one_hot_embeddings)
+
+            tvars = tf.trainable_variables()
+
+            initialized_variable_names = {}
+            if init_checkpoint:
+                (assignment_map, initialized_variable_names) = modeling.get_assignment_map_from_checkpoint(tvars, init_checkpoint)
+
+                tf.train.init_from_checkpoint(init_checkpoint, assignment_map)
+
+            tf.logging.info("**** Trainable Variables ****")
+            for var in tvars:
+                init_string = ""
+            if var.name in initialized_variable_names:
+                init_string = ", *INIT_FROM_CKPT*"
+            tf.logging.info("  name = %s, shape = %s%s", var.name, var.shape,
+                            init_string)
+
+            output_spec = None
+
+            predictions = {
+                "unique_ids": unique_ids,
+                "start_logits": start_logits,
+                "end_logits": end_logits,
+            }
+            output_spec = tf.contrib.tpu.TPUEstimatorSpec(
+                mode=mode, predictions=predictions, scaffold_fn=None)
+
+            return output_spec
 
         config = tf.ConfigProto(device_count={'GPU': 0 if self.device_id < 0 else 1})
         config.gpu_options.allow_growth = True
