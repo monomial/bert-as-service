@@ -1,3 +1,5 @@
+
+
 class SquadExample(object):
   """A single training/test example for simple sequence classification.
 
@@ -645,7 +647,10 @@ class FeatureWriter(object):
     self.filename = filename
     self.is_training = is_training
     self.num_features = 0
-    self._writer = tf.python_io.TFRecordWriter(filename)
+    if self.filename == None:
+        self._writer = None
+    else:
+        self._writer = tf.python_io.TFRecordWriter(filename)
 
   def process_feature(self, feature):
     """Write a InputFeature to the TFRecordWriter as a tf.train.Example."""
@@ -671,10 +676,12 @@ class FeatureWriter(object):
       features["is_impossible"] = create_int_feature([impossible])
 
     tf_example = tf.train.Example(features=tf.train.Features(feature=features))
-    self._writer.write(tf_example.SerializeToString())
+    if self._writer != None:
+        self._writer.write(tf_example.SerializeToString())
 
   def close(self):
-    self._writer.close()
+    if self._writer != None:
+        self._writer.close()
 
 
 class SquadHelper(object):

@@ -64,8 +64,8 @@ def optimize_graph(args, logger=None):
         
         ####################
         # squad
-        segment_ids = tf.placeholder(tf.int64, (None, None), 'segment_ids')
-        unique_ids = tf.placeholder(tf.int64, (None), 'unique_ids')
+        segment_ids = tf.placeholder(tf.int32, (None, None), 'segment_ids')
+        unique_ids = tf.placeholder(tf.int32, (None), 'unique_ids')
         ###############
 
         jit_scope = tf.contrib.compiler.jit.experimental_jit_scope if args.xla else contextlib.suppress

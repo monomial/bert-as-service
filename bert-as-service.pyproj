@@ -67,7 +67,7 @@
     <Compile Include="server\bert_serving\server\graph.py" />
     <Compile Include="server\bert_serving\server\helper.py" />
     <Compile Include="server\bert_serving\server\http.py" />
-    <Compile Include="server\bert_serving\server\SquadHelper.py">
+    <Compile Include="server\bert_serving\server\bert\SquadHelper.py">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="server\bert_serving\server\zmq_decor.py" />
