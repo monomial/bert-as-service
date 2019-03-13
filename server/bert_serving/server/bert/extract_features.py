@@ -16,7 +16,7 @@ import re
 
 from . import tokenization
 
-import SquadHelper
+from . import SquadHelper
 
 __all__ = ['convert_lst_to_features']
 
@@ -39,13 +39,41 @@ class InputFeatures(object):
         self.input_mask = input_mask
         self.input_type_ids = input_type_ids
 
+def convert_lst_to_features_squad(lst_str, max_seq_length, max_position_embeddings,
+                            tokenizer, logger, eval_features, is_tokenized=False, mask_cls_sep=False, doc_stride=128, max_query_length=64):
+    logger.info('mjs - lst_str length: %d' % len(lst_str))
+
+    eval_examples = read_squad_examples(lst_str, logger)
+
+    logger.info('mjs - eval_examples length: %d' % len(eval_examples))
+
+    def append_feature(feature):
+        eval_features.append(feature)
+
+    SquadHelper.convert_examples_to_features(
+        examples=eval_examples,
+        tokenizer=tokenizer,
+        max_seq_length=max_seq_length,
+        doc_stride=doc_stride,
+        max_query_length=max_query_length,
+        is_training=False,
+        output_fn=append_feature)
+
+    logger.info('mjs - eval_features length: %d' % len(eval_features))
+    logger.info(eval_features)
+
 
 def convert_lst_to_features(lst_str, max_seq_length, max_position_embeddings,
                             tokenizer, logger, is_tokenized=False, mask_cls_sep=False, is_squad=False, doc_stride=128, max_query_length=64):
     """Loads a data file into a list of `InputBatch`s."""
 
     if is_squad:
-        eval_examples = read_squad_examples(lst_str)
+
+        logger.info('mjs - lst_str length: %d' % len(lst_str))
+
+        eval_examples = read_squad_examples(lst_str, logger)
+
+        logger.info('mjs - eval_examples length: %d' % len(eval_examples))
 
         eval_features = []
 
@@ -61,6 +89,8 @@ def convert_lst_to_features(lst_str, max_seq_length, max_position_embeddings,
             is_training=False,
             output_fn=append_feature)
 
+        logger.info('mjs - eval_features length: %d' % len(eval_features))
+        logger.info(eval_features)
         return eval_features
 
     else:
@@ -184,16 +214,42 @@ def read_examples(lst_strs):
         unique_id += 1
 
 
-def read_squad_examples(lst_strs):
+def read_squad_examples(lst_strs, logger):
     unique_id = 0
     paragraph_text = lst_strs[0]
     char_to_word_offset = []
     doc_tokens = SquadHelper.convert_paragraph_text_to_doc_tokens(paragraph_text, char_to_word_offset)
+    examples = []
     for ss in lst_strs:
-        if unique_id == 0:
-            continue # paragraph text is the first string
+
+        logger.info('mjs - ss: %s' % ss)
+
+        #if unique_id == 0:
+        #    unique_id += 1
+        #    continue # paragraph text is the first string
 
         line = tokenization.convert_to_unicode(ss)
+
+        logger.info('mjs - line: %s' % line)
+
+        if not line:
+            continue
+
+        example = SquadHelper.SquadExample(qas_id = str(unique_id), 
+                                       question_text = line, 
+                                       doc_tokens = doc_tokens, 
+                                       orig_answer_text = None, 
+                                       start_position=None,
+                                       end_position=None,
+                                       is_impossible=False)
+        examples.append(example)
+
+        logger.info('mjs - examples length: %d' % len(examples))
+
+        unique_id += 1
+
+    logger.info('mjs - outer examples length: %d' % len(examples))
+    return examples
 
 
 

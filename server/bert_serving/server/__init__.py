@@ -452,10 +452,16 @@ class BertWorker(Process):
                                          input_map={k + ':0': features[k] for k in input_names},
                                          return_elements=['final_encodes:0'])
 
-            return EstimatorSpec(mode=mode, predictions={
-                'client_id': features['client_id'],
-                'encodes': output[0]
-            })
+            if self.squad:
+                return EstimatorSpec(mode=mode, predictions={
+                        'unique_ids': features['unique_ids'],
+                        'encodes': output[0]
+                    })
+            else:
+                return EstimatorSpec(mode=mode, predictions={
+                        'client_id': features['client_id'],
+                        'encodes': output[0]
+                    })
         
         def create_model_squad(input_ids, input_mask, segment_ids, use_one_hot_embeddings):
             """Creates a classification model for SQuAD."""
@@ -573,12 +579,16 @@ class BertWorker(Process):
 
         sink_embed.connect(self.sink_address)
         sink_token.connect(self.sink_address)
-        for r in estimator.predict(self.input_fn_builder(receivers, tf, sink_token), yield_single_examples=False):
-            send_ndarray(sink_embed, r['client_id'], r['encodes'], ServerCmd.data_embed)
-            logger.info('job done\tsize: %s\tclient: %s' % (r['encodes'].shape, r['client_id']))
+        for r in estimator.predict(self.input_fn_builder(receivers, tf, sink_token), yield_single_examples=True):
+            if self.squad:
+                send_ndarray(sink_embed, r['unique_ids'], r['encodes'], ServerCmd.data_embed)
+                logger.info('job done\tsize: %s\tclient: %s' % (r['encodes'].shape, r['unique_ids']))
+            else:
+                send_ndarray(sink_embed, r['client_id'], r['encodes'], ServerCmd.data_embed)
+                logger.info('job done\tsize: %s\tclient: %s' % (r['encodes'].shape, r['client_id']))
 
     def input_fn_builder(self, socks, tf, sink):
-        from .bert.extract_features import convert_lst_to_features
+        from .bert.extract_features import convert_lst_to_features, convert_lst_to_features_squad
         from .bert.tokenization import FullTokenizer
 
         def gen():
@@ -603,22 +613,57 @@ class BertWorker(Process):
                         logger.info('new job\tsocket: %d\tsize: %d\tclient: %s' % (sock_idx, len(msg), client_id))
                         # check if msg is a list of list, if yes consider the input is already tokenized
                         is_tokenized = all(isinstance(el, list) for el in msg)
-                        tmp_f = list(convert_lst_to_features(msg, self.max_seq_len,
+                        if self.squad:
+                            logger.info('converting list to features')
+                            mjs = []
+                            convert_lst_to_features_squad(lst_str = msg, 
+                                                          max_seq_length = self.max_seq_len,
+                                                          max_position_embeddings = self.bert_config.max_position_embeddings,
+                                                          tokenizer = tokenizer, 
+                                                          logger = logger,
+                                                          eval_features = mjs,
+                                                          is_tokenized = is_tokenized, 
+                                                          mask_cls_sep = self.mask_cls_sep, 
+                                                          doc_stride = 128,
+                                                          max_query_length = 64)
+
+                            logger.info('converted list to features')
+
+                            logger.info('mjs length: %d' % len(mjs))
+
+                            input_ids_array = [f.input_ids for f in mjs]
+                            input_mask_array = [f.input_mask for f in mjs]
+                            segment_ids_array = [f.segment_ids for f in mjs]
+                            logger.info('unique_ids %d' % 1234)
+                            logger.info('input_ids_array')
+                            logger.info(input_ids_array)
+                            logger.info('input_mask_array')
+                            logger.info(input_mask_array)
+                            logger.info('segment_ids_array')
+                            logger.info(segment_ids_array)
+                            yield {
+                                'unique_ids': 1234,
+                                'input_ids': [f.input_ids for f in mjs],
+                                'input_mask': [f.input_mask for f in mjs],
+                                'segment_ids': [f.segment_ids for f in mjs]
+                            }
+                        else:
+                            tmp_f = list(convert_lst_to_features(msg, self.max_seq_len,
                                                              self.bert_config.max_position_embeddings,
                                                              tokenizer, logger,
                                                              is_tokenized, self.mask_cls_sep, is_squad=self.squad))
-                        if self.show_tokens_to_client:
-                            sink.send_multipart([client_id, jsonapi.dumps([f.tokens for f in tmp_f]),
-                                                 b'', ServerCmd.data_token])
-                        
-                        if self.squad:
-                            yield {
-                                'client_id': client_id,
-                                'input_ids': [f.input_ids for f in tmp_f],
-                                'input_mask': [f.input_mask for f in tmp_f],
-                                'segment_ids': [f.segment_ids for f in tmp_f]
-                            }
-                        else:
+                            if self.show_tokens_to_client:
+                                sink.send_multipart([client_id, jsonapi.dumps([f.tokens for f in tmp_f]),
+                                                     b'', ServerCmd.data_token])
+
+                            logger.info('converted list to features')
+                            input_ids_array = [f.input_ids for f in tmp_f]
+                            input_mask_array = [f.input_mask for f in tmp_f]
+                            input_type_ids_array = [f.input_type_ids for f in tmp_f]
+                            logger.info('client_id %s' % client_id)
+                            logger.info(input_ids_array)
+                            logger.info(input_mask_array)
+                            logger.info(input_type_ids_array)
                             yield {
                                 'client_id': client_id,
                                 'input_ids': [f.input_ids for f in tmp_f],
@@ -628,17 +673,17 @@ class BertWorker(Process):
 
         def input_fn():
             if self.squad:
-                return (tf.data.Dataset.from_generator(
+                return tf.data.Dataset.from_generator(
                     gen,
                     output_types={'input_ids': tf.int32,
                                   'input_mask': tf.int32,
                                   'segment_ids': tf.int32,
-                                  'client_id': tf.string},
+                                  'unique_ids': tf.int32},
                     output_shapes={
-                        'client_id': (),
+                        'unique_ids': (),
                         'input_ids': (None, None),
                         'input_mask': (None, None),
-                        'segment_ids': (None, None)}).prefetch(self.prefetch_size))
+                        'segment_ids': (None, None)})
             else:
                 return (tf.data.Dataset.from_generator(
                     gen,
@@ -651,7 +696,7 @@ class BertWorker(Process):
                         'input_ids': (None, None),
                         'input_mask': (None, None),
                         'input_type_ids': (None, None)}).prefetch(self.prefetch_size))
-
+        
         return input_fn
 
 
