@@ -18,7 +18,7 @@ from . import tokenization
 
 from . import SquadHelper
 
-__all__ = ['convert_lst_to_features']
+__all__ = ['convert_lst_to_features', 'convert_lst_to_features_squad']
 
 
 class InputExample(object):
