@@ -598,6 +598,13 @@ class BertWorker(Process):
         sink_token.connect(self.sink_address)
         for r in estimator.predict(self.input_fn_builder(receivers, tf, sink_token), yield_single_examples=False):
             logger.info('job done\tsize: %s\tclient: %s' % (r['encodes'].shape, r['client_id']))
+            client_id = r['client_id']
+            start_logits = [float(x) for x in r["start_logits"].flat]
+            end_logits = [float(x) for x in r["end_logits"].flat]
+            rawResult = run_squad.RawResult(
+                            unique_id=client_id,
+                            start_logits=start_logits,
+                            end_logits=end_logits)
             send_ndarray(sink_embed, r['client_id'], r['encodes'], ServerCmd.data_embed)
             
 
