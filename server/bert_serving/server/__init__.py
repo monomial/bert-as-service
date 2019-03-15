@@ -23,11 +23,11 @@ from .helper import *
 from .http import BertHTTPProxy
 from .zmq_decor import multi_socket
 
-import run_squad
+from .bert import run_squad
 
 
 __all__ = ['__version__', 'BertServer']
-__version__ = '1.8.3'
+__version__ = '1.8.4'
 
 _tf_ver_ = check_tf_version()
 
@@ -437,7 +437,6 @@ class BertWorker(Process):
         self.logger.info('terminated!')
 
     def get_squad_estimator(self, tf):
-        
         model_fn = run_squad.model_fn_builder(
             bert_config=self.bert_config,
             init_checkpoint=self.model_dir + "/" + self.ck,
@@ -598,8 +597,9 @@ class BertWorker(Process):
         sink_embed.connect(self.sink_address)
         sink_token.connect(self.sink_address)
         for r in estimator.predict(self.input_fn_builder(receivers, tf, sink_token), yield_single_examples=False):
-            send_ndarray(sink_embed, r['client_id'], r['encodes'], ServerCmd.data_embed)
             logger.info('job done\tsize: %s\tclient: %s' % (r['encodes'].shape, r['client_id']))
+            send_ndarray(sink_embed, r['client_id'], r['encodes'], ServerCmd.data_embed)
+            
 
     def input_fn_builder(self, socks, tf, sink):
         from .bert.extract_features import convert_lst_to_features
@@ -627,10 +627,15 @@ class BertWorker(Process):
                         logger.info('new job\tsocket: %d\tsize: %d\tclient: %s' % (sock_idx, len(msg), client_id))
                         # check if msg is a list of list, if yes consider the input is already tokenized
                         is_tokenized = all(isinstance(el, list) for el in msg)
+
+                        logger.info('converting list to features...')
                         tmp_f = list(convert_lst_to_features(msg, self.max_seq_len,
                                                              self.bert_config.max_position_embeddings,
                                                              tokenizer, logger,
                                                              is_tokenized, self.mask_cls_sep, is_squad=self.squad))
+
+                        logger.info('converted list to features. len = %d' % (len(tmp_f)))
+
                         if self.show_tokens_to_client:
                             sink.send_multipart([client_id, jsonapi.dumps([f.tokens for f in tmp_f]),
                                                  b'', ServerCmd.data_token])
