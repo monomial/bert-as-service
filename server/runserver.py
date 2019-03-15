@@ -11,7 +11,16 @@ except ImportError:
     from mock import patch
 
 def test_parse_args():
-    testargs = ["bert-serving-start", "-model_dir", "C:\\Users\\michaels\\Projects\\bert\\models\\uncased_L-12_H-768_A-12", "-num_worker=1"]
+    testargs = ["bert-serving-start", 
+                "-model_dir", "E:/Git/bert/models/uncased_L-12_H-768_A-12", 
+                "-tuned_model_dir", "E:/Git/bert/tmp/squad2_base/",
+                "-ckpt_name", "model.ckpt-10859",
+                "-num_worker=1",
+                "-pooling_layer", "-1", 
+                "-pooling_strategy", "FIRST_TOKEN", # I believe SQuAD uses FIRST_TOKEN
+                "-max_seq_len", "384"
+                ,"-squad"
+                ]
     with patch.object(sys, 'argv', testargs):
         main()
 

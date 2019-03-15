@@ -105,6 +105,7 @@ def get_args_parser():
                         then the embedding is preserved, otherwise the embedding is masked to zero before pooling')
     group2.add_argument('-show_tokens_to_client', action='store_true', default=False,
                         help='sending tokenization results to client')
+    group2.add_argument("-squad", action='store_true', default=False, help='do question / answer processing')
 
     group3 = parser.add_argument_group('Serving Configs',
                                        'config how server utilizes GPU/CPU resources')

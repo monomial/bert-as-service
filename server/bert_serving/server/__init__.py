@@ -23,6 +23,8 @@ from .helper import *
 from .http import BertHTTPProxy
 from .zmq_decor import multi_socket
 
+from .bert import run_squad
+
 __all__ = ['__version__', 'BertServer']
 __version__ = '1.8.3'
 
@@ -63,6 +65,7 @@ class BertServer(threading.Thread):
             'server_start_time': str(datetime.now()),
         }
         self.processes = []
+        self.init_checkpoint = os.path.join(args.tuned_model_dir or args.model_dir, args.ckpt_name)
         self.logger.info('freeze, optimize and export graph, could take a while...')
         with Pool(processes=1) as pool:
             # optimize the graph, must be done in another process
@@ -120,7 +123,7 @@ class BertServer(threading.Thread):
         device_map = self._get_device_map()
         for idx, device_id in enumerate(device_map):
             process = BertWorker(idx, self.args, addr_backend_list, addr_sink, device_id,
-                                 self.graph_path, self.bert_config)
+                                 self.graph_path, self.bert_config, self.init_checkpoint)
             self.processes.append(process)
             process.start()
 
@@ -404,7 +407,7 @@ class SinkJob:
 
 
 class BertWorker(Process):
-    def __init__(self, id, args, worker_address_list, sink_address, device_id, graph_path, graph_config):
+    def __init__(self, id, args, worker_address_list, sink_address, device_id, graph_path, graph_config, init_checkpoint):
         super().__init__()
         self.worker_id = id
         self.device_id = device_id
@@ -424,6 +427,8 @@ class BertWorker(Process):
         self.bert_config = graph_config
         self.use_fp16 = args.fp16
         self.show_tokens_to_client = args.show_tokens_to_client
+        self.squad = args.squad
+        self.init_checkpoint = init_checkpoint
 
     def close(self):
         self.logger.info('shutting down...')
@@ -431,6 +436,44 @@ class BertWorker(Process):
         self.terminate()
         self.join()
         self.logger.info('terminated!')
+
+    def get_squad_estimator(self, tf):
+        from .bert.tokenization import FullTokenizer
+        #tf.logging.set_verbosity(tf.logging.INFO)
+        vocab_file=os.path.join(self.model_dir, 'vocab.txt')
+        fullTokenizer = FullTokenizer(vocab_file=vocab_file, do_lower_case=True)
+
+        is_per_host = tf.contrib.tpu.InputPipelineConfig.PER_HOST_V2
+        
+        run_config = tf.contrib.tpu.RunConfig(
+          cluster=None,
+          master=None,
+          model_dir=self.model_dir,
+          save_checkpoints_steps=1000,
+          tpu_config=tf.contrib.tpu.TPUConfig(
+              iterations_per_loop=1000,
+              num_shards=8,
+              per_host_input_for_training=is_per_host))
+        
+        model_fn = run_squad.model_fn_builder(
+          bert_config=self.bert_config,
+          init_checkpoint=self.init_checkpoint,
+          learning_rate=5e-5, # todo: make this configurable
+          num_train_steps=None,
+          num_warmup_steps=None,
+          use_tpu=False,
+          use_one_hot_embeddings=False)
+
+        # If TPU is not available, this will fall back to normal Estimator on CPU
+        # or GPU.
+        estimator = tf.contrib.tpu.TPUEstimator(
+          use_tpu=False,
+          model_fn=model_fn,
+          config=run_config,
+          train_batch_size=32, # we're not training, so maybe don't set this
+          predict_batch_size=1) # todo: make this configurable?
+
+        return estimator
 
     def get_estimator(self, tf):
         from tensorflow.python.estimator.estimator import Estimator
@@ -478,19 +521,101 @@ class BertWorker(Process):
                     ('cpu' if self.device_id < 0 else ('gpu: %d' % self.device_id), self.graph_path))
 
         tf = import_tf(self.device_id, self.verbose, use_fp16=self.use_fp16)
-        estimator = self.get_estimator(tf)
+
+        estimator = None
+
+        if self.squad:
+            logger.info('getting squad estimator...')
+            estimator = self.get_squad_estimator(tf)
+            logger.info('got squad estimator')
+        else:
+            estimator = self.get_estimator(tf)
 
         for sock, addr in zip(receivers, self.worker_address):
             sock.connect(addr)
 
         sink_embed.connect(self.sink_address)
         sink_token.connect(self.sink_address)
-        for r in estimator.predict(self.input_fn_builder(receivers, tf, sink_token), yield_single_examples=False):
-            send_ndarray(sink_embed, r['client_id'], r['encodes'], ServerCmd.data_embed)
-            logger.info('job done\tsize: %s\tclient: %s' % (r['encodes'].shape, r['client_id']))
+
+        if self.squad:
+            predict_input_fn = self.predict_input_fn_builder(receivers, tf, sink_token)
+            for result in estimator.predict(predict_input_fn, yield_single_examples=True):
+                send_ndarray(sink_embed, result['client_id'], result['encodes'], ServerCmd.data_embed)
+                logger.info('job done\tsize: %s\tclient: %s' % (result['encodes'].shape, result['client_id']))
+        else:
+            for r in estimator.predict(self.input_fn_builder(receivers, tf, sink_token), yield_single_examples=False):
+                send_ndarray(sink_embed, r['client_id'], r['encodes'], ServerCmd.data_embed)
+                logger.info('job done\tsize: %s\tclient: %s' % (r['encodes'].shape, r['client_id']))
+
+    def predict_input_fn_builder(self, socks, tf, sink):
+        """Creates the SQuAD version of an `input_fn` closure to be passed to TPUEstimator."""
+
+        seq_length = 384 # todo: make this configurable
+
+        name_to_features = {
+            "unique_ids": tf.FixedLenFeature([], tf.int64),
+            "input_ids": tf.FixedLenFeature([seq_length], tf.int64),
+            "input_mask": tf.FixedLenFeature([seq_length], tf.int64),
+            "segment_ids": tf.FixedLenFeature([seq_length], tf.int64),
+        }
+
+        from .bert.extract_features import convert_lst_to_features, convert_lst_to_features_squad
+        from .bert.tokenization import FullTokenizer
+
+        def gen():
+            tokenizer = FullTokenizer(vocab_file=os.path.join(self.model_dir, 'vocab.txt'))
+            # Windows does not support logger in MP environment, thus get a new logger
+            # inside the process for better compatibility
+            logger = set_logger(colored('WORKER-%d' % self.worker_id, 'yellow'), self.verbose)
+
+            poller = zmq.Poller()
+            for sock in socks:
+                poller.register(sock, zmq.POLLIN)
+
+            logger.info('ready and listening for SQuAD!')
+
+            while not self.exit_flag.is_set():
+                events = dict(poller.poll())
+                for sock_idx, sock in enumerate(socks):
+                    if sock in events:
+                        client_id, raw_msg = sock.recv_multipart()
+                        msg = jsonapi.loads(raw_msg)
+                        logger.info('New Job \t Socket #: %d \t Length: %d \t Client ID: %s' % (sock_idx, len(msg), client_id))
+                        # check if msg is a list of list, if yes consider the input is already tokenized
+                        is_tokenized = all(isinstance(el, list) for el in msg)
+
+                        tmp_f = list(convert_lst_to_features_squad(msg, self.max_seq_len,
+                                                                self.bert_config.max_position_embeddings,
+                                                                tokenizer, logger,
+                                                                is_tokenized, self.mask_cls_sep))
+                        if self.show_tokens_to_client:
+                            sink.send_multipart([client_id, jsonapi.dumps([f.tokens for f in tmp_f]),
+                                                    b'', ServerCmd.data_token])
+                        yield {
+                            'client_id': client_id,
+                            'input_ids': [f.input_ids for f in tmp_f],
+                            'input_mask': [f.input_mask for f in tmp_f],
+                            'segment_ids': [f.input_type_ids for f in tmp_f]
+                        }
+
+        def input_fn():
+            return (tf.data.Dataset.from_generator(
+                gen,
+                output_types={'input_ids': tf.int32,
+                              'input_mask': tf.int32,
+                              'segment_ids': tf.int32,
+                              'client_id': tf.string},
+                output_shapes={
+                    'client_id': (),
+                    'input_ids': (None, None),
+                    'input_mask': (None, None),
+                    'segment_ids': (None, None)}).prefetch(self.prefetch_size))
+
+        return input_fn
+
 
     def input_fn_builder(self, socks, tf, sink):
-        from .bert.extract_features import convert_lst_to_features
+        from .bert.extract_features import convert_lst_to_features, convert_lst_to_features_squad
         from .bert.tokenization import FullTokenizer
 
         def gen():
@@ -514,19 +639,35 @@ class BertWorker(Process):
                         logger.info('new job\tsocket: %d\tsize: %d\tclient: %s' % (sock_idx, len(msg), client_id))
                         # check if msg is a list of list, if yes consider the input is already tokenized
                         is_tokenized = all(isinstance(el, list) for el in msg)
-                        tmp_f = list(convert_lst_to_features(msg, self.max_seq_len,
-                                                             self.bert_config.max_position_embeddings,
-                                                             tokenizer, logger,
-                                                             is_tokenized, self.mask_cls_sep))
-                        if self.show_tokens_to_client:
-                            sink.send_multipart([client_id, jsonapi.dumps([f.tokens for f in tmp_f]),
-                                                 b'', ServerCmd.data_token])
-                        yield {
-                            'client_id': client_id,
-                            'input_ids': [f.input_ids for f in tmp_f],
-                            'input_mask': [f.input_mask for f in tmp_f],
-                            'input_type_ids': [f.input_type_ids for f in tmp_f]
-                        }
+
+                        if self.squad:
+                            tmp_f = list(convert_lst_to_features_squad(msg, self.max_seq_len,
+                                                                 self.bert_config.max_position_embeddings,
+                                                                 tokenizer, logger,
+                                                                 is_tokenized, self.mask_cls_sep))
+                            if self.show_tokens_to_client:
+                                sink.send_multipart([client_id, jsonapi.dumps([f.tokens for f in tmp_f]),
+                                                     b'', ServerCmd.data_token])
+                            yield {
+                                'client_id': client_id,
+                                'input_ids': [f.input_ids for f in tmp_f],
+                                'input_mask': [f.input_mask for f in tmp_f],
+                                'segment_ids': [f.segment_ids for f in tmp_f]
+                            }
+                        else:
+                            tmp_f = list(convert_lst_to_features(msg, self.max_seq_len,
+                                                                 self.bert_config.max_position_embeddings,
+                                                                 tokenizer, logger,
+                                                                 is_tokenized, self.mask_cls_sep))
+                            if self.show_tokens_to_client:
+                                sink.send_multipart([client_id, jsonapi.dumps([f.tokens for f in tmp_f]),
+                                                     b'', ServerCmd.data_token])
+                            yield {
+                                'client_id': client_id,
+                                'input_ids': [f.input_ids for f in tmp_f],
+                                'input_mask': [f.input_mask for f in tmp_f],
+                                'input_type_ids': [f.input_type_ids for f in tmp_f]
+                            }
 
         def input_fn():
             return (tf.data.Dataset.from_generator(

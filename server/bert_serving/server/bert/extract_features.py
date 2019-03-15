@@ -16,7 +16,9 @@ import re
 
 from . import tokenization
 
-__all__ = ['convert_lst_to_features']
+from . import SquadHelper
+
+__all__ = ['convert_lst_to_features', 'convert_lst_to_features_squad']
 
 
 class InputExample(object):
@@ -36,6 +38,32 @@ class InputFeatures(object):
         self.input_ids = input_ids
         self.input_mask = input_mask
         self.input_type_ids = input_type_ids
+
+def convert_lst_to_features_squad(lst_str, max_seq_length, max_position_embeddings,
+                            tokenizer, logger, is_tokenized=False, mask_cls_sep=False):
+    logger.info('convert_lst_to_features_squad - lst_str length: %d' % len(lst_str))
+
+    eval_examples = read_squad_examples(lst_str, logger)
+
+    eval_features = []
+
+    def append_feature(feature):
+        eval_features.append(feature)
+
+    SquadHelper.convert_examples_to_features(
+        examples=eval_examples,
+        tokenizer=tokenizer,
+        max_seq_length=max_seq_length,
+        doc_stride=128,
+        max_query_length=64,
+        is_training=False,
+        output_fn=append_feature)
+
+    logger.info('convert_lst_to_features_squad - eval_features length: %d' % len(eval_features))
+    logger.info(eval_features)
+
+    for feat in eval_features:
+        yield feat
 
 
 def convert_lst_to_features(lst_str, max_seq_length, max_position_embeddings,
@@ -176,3 +204,41 @@ def read_tokenized_examples(lst_strs):
             pass
         yield InputExample(unique_id=unique_id, text_a=text_a, text_b=text_b)
         unique_id += 1
+
+
+def read_squad_examples(lst_strs, logger):
+    unique_id = 0
+    paragraph_text = lst_strs[0]
+    char_to_word_offset = []
+    doc_tokens = SquadHelper.convert_paragraph_text_to_doc_tokens(paragraph_text, char_to_word_offset)
+    examples = []
+    for ss in lst_strs:
+
+        logger.info('mjs - ss: %s' % ss)
+
+        #if unique_id == 0:
+        #    unique_id += 1
+        #    continue # paragraph text is the first string
+
+        line = tokenization.convert_to_unicode(ss)
+
+        logger.info('mjs - line: %s' % line)
+
+        if not line:
+            continue
+
+        example = SquadHelper.SquadExample(qas_id = str(unique_id), 
+                                       question_text = line, 
+                                       doc_tokens = doc_tokens, 
+                                       orig_answer_text = None, 
+                                       start_position=None,
+                                       end_position=None,
+                                       is_impossible=False)
+        examples.append(example)
+
+        logger.info('mjs - examples length: %d' % len(examples))
+
+        yield example
+
+        unique_id += 1
+
