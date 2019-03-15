@@ -16,7 +16,7 @@ import re
 
 from . import tokenization
 
-import SquadHelper
+from . import SquadHelper
 
 __all__ = ['convert_lst_to_features']
 

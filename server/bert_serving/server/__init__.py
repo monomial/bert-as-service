@@ -23,6 +23,9 @@ from .helper import *
 from .http import BertHTTPProxy
 from .zmq_decor import multi_socket
 
+import run_squad
+
+
 __all__ = ['__version__', 'BertServer']
 __version__ = '1.8.3'
 
@@ -432,6 +435,27 @@ class BertWorker(Process):
         self.terminate()
         self.join()
         self.logger.info('terminated!')
+
+    def get_squad_estimator(self, tf):
+        
+        model_fn = run_squad.model_fn_builder(
+            bert_config=self.bert_config,
+            init_checkpoint=self.model_dir + "/" + self.ck,
+            learning_rate=FLAGS.learning_rate,
+            num_train_steps=None,
+            num_warmup_steps=None,
+            use_tpu=False,
+            use_one_hot_embeddings=FLAGS.use_tpu)
+
+        # If TPU is not available, this will fall back to normal Estimator on CPU
+        # or GPU.
+        return tf.contrib.tpu.TPUEstimator(
+            use_tpu=FLAGS.use_tpu,
+            model_fn=model_fn,
+            config=run_config,
+            train_batch_size=FLAGS.train_batch_size,
+            predict_batch_size=FLAGS.predict_batch_size)
+        
 
     def get_estimator(self, tf):
         from tensorflow.python.estimator.estimator import Estimator

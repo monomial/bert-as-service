@@ -11,9 +11,9 @@ except ImportError:
     from mock import patch
 
 def test_parse_args():
-    testargs = ["bert-serving-start", "-model_dir", "E:/Git/bert/models/uncased_L-12_H-768_A-12", 
+    testargs = ["bert-serving-start", "-model_dir", "D:/data/bert/uncased_L-12_H-768_A-12", 
                 "-num_worker=1",
-                "-tuned_model_dir", "E:/Git/bert/tmp/squad2_base/",
+                "-tuned_model_dir", "D:/models/tmp/squad2_base_laptop/",
                 "-ckpt_name", "model.ckpt-10859",
                 "-pooling_layer", "-1", 
                 "-pooling_strategy", "FIRST_TOKEN", # I believe SQuAD uses FIRST_TOKEN
