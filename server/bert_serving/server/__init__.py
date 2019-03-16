@@ -533,7 +533,8 @@ class BertWorker(Process):
             for name in sorted(features.keys()):
                 self.logger.info("  name = %s, shape = %s" % (name, features[name].shape))
 
-            unique_ids = features["client_id"]
+            client_id = features["client_id"]
+            unique_ids = features["unique_id"]
             input_ids = features["input_ids"]
             input_mask = features["input_mask"]
             segment_ids = features["segment_ids"]
@@ -562,6 +563,7 @@ class BertWorker(Process):
             output_spec = None
 
             predictions = {
+                "client_id": client_id,
                 "unique_ids": unique_ids,
                 "start_logits": start_logits,
                 "end_logits": end_logits,
@@ -685,6 +687,7 @@ class BertWorker(Process):
                         
                         if self.squad:
                             logger.info("yielding client_id: %s" % client_id)
+                            unique_ids = [f.unique_id for f in tmp_f]
                             input_ids = [f.input_ids for f in tmp_f]
                             input_mask = [f.input_mask for f in tmp_f]
                             segment_ids = [f.segment_ids for f in tmp_f]
@@ -693,6 +696,7 @@ class BertWorker(Process):
                             #logger.info(segment_ids)
                             yield {
                                 'client_id': client_id,
+                                'unique_id': unique_ids,
                                 'input_ids': input_ids,
                                 'input_mask': input_mask,
                                 'segment_ids': segment_ids
@@ -712,9 +716,11 @@ class BertWorker(Process):
                     output_types={'input_ids': tf.int32,
                                   'input_mask': tf.int32,
                                   'segment_ids': tf.int32,
-                                  'client_id': tf.string},
+                                  'client_id': tf.string,
+                                  'unique_id': tf.int32},
                     output_shapes={
                         'client_id': (),
+                        'unique_id': (None),
                         'input_ids': (None, None),
                         'input_mask': (None, None),
                         'segment_ids': (None, None)}).prefetch(self.prefetch_size))

@@ -765,6 +765,8 @@ def write_predictions(all_examples, all_features, all_results, n_best_size,
 
   example_index_to_features = collections.defaultdict(list)
   for feature in all_features:
+    if logger != None:
+      logger.info(f"inside all_features loop. example_index: {feature.example_index}")
     example_index_to_features[feature.example_index].append(feature)
 
   unique_id_to_result = {}
