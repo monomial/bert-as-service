@@ -19,7 +19,7 @@ def test_parse_args():
                 "-pooling_strategy", "FIRST_TOKEN", # I believe SQuAD uses FIRST_TOKEN
                 "-max_seq_len", "384", 
                 "-max_batch_size", "16", 
-                "-show_tokens_to_client",
+                #"-show_tokens_to_client",
                 "-squad" # my custom squad parameter
                 ]
     with patch.object(sys, 'argv', testargs):

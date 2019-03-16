@@ -276,7 +276,7 @@ def read_squad_examples(input_file, is_training):
         is_impossible = False
         if is_training:
 
-          if FLAGS.version_2_with_negative:
+          if True:
             is_impossible = qa["is_impossible"]
           if (len(qa["answers"]) != 1) and (not is_impossible):
             raise ValueError(
@@ -755,10 +755,13 @@ RawResult = collections.namedtuple("RawResult",
 
 def write_predictions(all_examples, all_features, all_results, n_best_size,
                       max_answer_length, do_lower_case, output_prediction_file,
-                      output_nbest_file, output_null_log_odds_file):
+                      output_nbest_file, output_null_log_odds_file, logger=None):
   """Write final predictions to the json file and log-odds of null if needed."""
-  tf.logging.info("Writing predictions to: %s" % (output_prediction_file))
-  tf.logging.info("Writing nbest to: %s" % (output_nbest_file))
+  if logger != None:
+    logger.info(f'inside writing predictions. all_examples length: {len(all_examples)}  all_features length: {len(all_features)}  all_results length: {len(all_results)}')
+  else:
+    tf.logging.info("Writing predictions to: %s" % (output_prediction_file))
+    tf.logging.info("Writing nbest to: %s" % (output_nbest_file))
 
   example_index_to_features = collections.defaultdict(list)
   for feature in all_features:
@@ -766,6 +769,8 @@ def write_predictions(all_examples, all_features, all_results, n_best_size,
 
   unique_id_to_result = {}
   for result in all_results:
+    if logger != None:
+      logger.info(f'inside all_results loop. unique_id = {result.unique_id}')
     unique_id_to_result[result.unique_id] = result
 
   _PrelimPrediction = collections.namedtuple(  # pylint: disable=invalid-name
@@ -777,6 +782,9 @@ def write_predictions(all_examples, all_features, all_results, n_best_size,
   scores_diff_json = collections.OrderedDict()
 
   for (example_index, example) in enumerate(all_examples):
+    if logger != None:
+        logger.info('inside writing predictions for loop')
+
     features = example_index_to_features[example_index]
 
     prelim_predictions = []
@@ -786,18 +794,27 @@ def write_predictions(all_examples, all_features, all_results, n_best_size,
     null_start_logit = 0  # the start logit at the slice with min null score
     null_end_logit = 0  # the end logit at the slice with min null score
     for (feature_index, feature) in enumerate(features):
+      if logger != None:
+        logger.info(f'inside enumerate features loop index: {feature_index} unique_id: {feature.unique_id}')
       result = unique_id_to_result[feature.unique_id]
+      if logger != None:
+        logger.info(f'result: {result}')
       start_indexes = _get_best_indexes(result.start_logits, n_best_size)
       end_indexes = _get_best_indexes(result.end_logits, n_best_size)
+      if logger != None:
+        logger.info(f'start indices: {start_indexes}  end_indices: {end_indexes}')
       # if we could have irrelevant answers, get the min score of irrelevant
-      if FLAGS.version_2_with_negative:
+      if True:
         feature_null_score = result.start_logits[0] + result.end_logits[0]
         if feature_null_score < score_null:
           score_null = feature_null_score
           min_null_feature_index = feature_index
           null_start_logit = result.start_logits[0]
           null_end_logit = result.end_logits[0]
+
       for start_index in start_indexes:
+        if logger != None:
+          logger.info(f'inside start_indexes loop, index = {start_index}')
         for end_index in end_indexes:
           # We could hypothetically create invalid predictions, e.g., predict
           # that the start of the span is in the question. We throw out all
@@ -825,7 +842,7 @@ def write_predictions(all_examples, all_features, all_results, n_best_size,
                   start_logit=result.start_logits[start_index],
                   end_logit=result.end_logits[end_index]))
 
-    if FLAGS.version_2_with_negative:
+    if True:
       prelim_predictions.append(
           _PrelimPrediction(
               feature_index=min_null_feature_index,
@@ -837,6 +854,9 @@ def write_predictions(all_examples, all_features, all_results, n_best_size,
         prelim_predictions,
         key=lambda x: (x.start_logit + x.end_logit),
         reverse=True)
+
+    if logger != None:
+        logger.info('prelim predictions sorted')
 
     _NbestPrediction = collections.namedtuple(  # pylint: disable=invalid-name
         "NbestPrediction", ["text", "start_logit", "end_logit"])
@@ -878,8 +898,11 @@ def write_predictions(all_examples, all_features, all_results, n_best_size,
               start_logit=pred.start_logit,
               end_logit=pred.end_logit))
 
+    if logger != None:
+        logger.info('nbest created')
+    
     # if we didn't inlude the empty option in the n-best, inlcude it
-    if FLAGS.version_2_with_negative:
+    if True:
       if "" not in seen_predictions:
         nbest.append(
             _NbestPrediction(
@@ -914,7 +937,7 @@ def write_predictions(all_examples, all_features, all_results, n_best_size,
 
     assert len(nbest_json) >= 1
 
-    if not FLAGS.version_2_with_negative:
+    if not True:
       all_predictions[example.qas_id] = nbest_json[0]["text"]
     else:
       # predict "" iff the null score - the score of best non-null > threshold
@@ -927,16 +950,19 @@ def write_predictions(all_examples, all_features, all_results, n_best_size,
         all_predictions[example.qas_id] = best_non_null_entry.text
 
     all_nbest_json[example.qas_id] = nbest_json
+  
+  if output_prediction_file != None:
+    with tf.gfile.GFile(output_prediction_file, "w") as writer:
+      writer.write(json.dumps(all_predictions, indent=4) + "\n")
 
-  with tf.gfile.GFile(output_prediction_file, "w") as writer:
-    writer.write(json.dumps(all_predictions, indent=4) + "\n")
+  if output_nbest_file != None:
+    with tf.gfile.GFile(output_nbest_file, "w") as writer:
+      writer.write(json.dumps(all_nbest_json, indent=4) + "\n")
 
-  with tf.gfile.GFile(output_nbest_file, "w") as writer:
-    writer.write(json.dumps(all_nbest_json, indent=4) + "\n")
-
-  if FLAGS.version_2_with_negative:
-    with tf.gfile.GFile(output_null_log_odds_file, "w") as writer:
-      writer.write(json.dumps(scores_diff_json, indent=4) + "\n")
+  if output_null_log_odds_file != None:
+    if True:
+      with tf.gfile.GFile(output_null_log_odds_file, "w") as writer:
+        writer.write(json.dumps(scores_diff_json, indent=4) + "\n")
   
   return all_nbest_json
 

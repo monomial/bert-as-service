@@ -24,6 +24,7 @@ from .http import BertHTTPProxy
 from .zmq_decor import multi_socket
 
 from .bert import run_squad
+from .bert import modeling
 
 
 __all__ = ['__version__', 'BertServer']
@@ -48,6 +49,12 @@ class BertServer(threading.Thread):
     def __init__(self, args):
         super().__init__()
         self.logger = set_logger(colored('VENTILATOR', 'magenta'), args.verbose)
+
+        args.init_checkpoint = os.path.join(args.tuned_model_dir or args.model_dir, args.ckpt_name)
+
+        self.logger.info('init checkpoint: %s' % args.init_checkpoint)
+
+        self.init_checkpoint = args.init_checkpoint
 
         self.model_dir = args.model_dir
         self.max_seq_len = args.max_seq_len
@@ -428,6 +435,7 @@ class BertWorker(Process):
         self.use_fp16 = args.fp16
         self.show_tokens_to_client = args.show_tokens_to_client
         self.squad = args.squad
+        self.init_checkpoint = args.init_checkpoint
 
     def close(self):
         self.logger.info('shutting down...')
@@ -439,12 +447,12 @@ class BertWorker(Process):
     def get_squad_estimator(self, tf):
         model_fn = run_squad.model_fn_builder(
             bert_config=self.bert_config,
-            init_checkpoint=self.model_dir + "/" + self.ck,
+            init_checkpoint=self.init_checkpoint,
             learning_rate=FLAGS.learning_rate,
             num_train_steps=None,
             num_warmup_steps=None,
             use_tpu=False,
-            use_one_hot_embeddings=FLAGS.use_tpu)
+            use_one_hot_embeddings=False)
 
         # If TPU is not available, this will fall back to normal Estimator on CPU
         # or GPU.
@@ -521,11 +529,11 @@ class BertWorker(Process):
         def model_fn_squad(features, labels, mode, params):  # pylint: disable=unused-argument
             """The squad version of `model_fn`."""
 
-            tf.logging.info("*** Features ***")
+            self.logger.info("*** Features ***")
             for name in sorted(features.keys()):
-                tf.logging.info("  name = %s, shape = %s" % (name, features[name].shape))
+                self.logger.info("  name = %s, shape = %s" % (name, features[name].shape))
 
-            unique_ids = features["unique_ids"]
+            unique_ids = features["client_id"]
             input_ids = features["input_ids"]
             input_mask = features["input_mask"]
             segment_ids = features["segment_ids"]
@@ -534,23 +542,22 @@ class BertWorker(Process):
                 input_ids=input_ids,
                 input_mask=input_mask,
                 segment_ids=segment_ids,
-                use_one_hot_embeddings=use_one_hot_embeddings)
+                use_one_hot_embeddings=False)
 
             tvars = tf.trainable_variables()
 
             initialized_variable_names = {}
-            if init_checkpoint:
-                (assignment_map, initialized_variable_names) = modeling.get_assignment_map_from_checkpoint(tvars, init_checkpoint)
+            if self.init_checkpoint:
+                (assignment_map, initialized_variable_names) = modeling.get_assignment_map_from_checkpoint(tvars, self.init_checkpoint)
 
-                tf.train.init_from_checkpoint(init_checkpoint, assignment_map)
+                tf.train.init_from_checkpoint(self.init_checkpoint, assignment_map)
 
-            tf.logging.info("**** Trainable Variables ****")
+            self.logger.info("**** Trainable Variables ****")
             for var in tvars:
                 init_string = ""
             if var.name in initialized_variable_names:
                 init_string = ", *INIT_FROM_CKPT*"
-            tf.logging.info("  name = %s, shape = %s%s", var.name, var.shape,
-                            init_string)
+            self.logger.info("  name = %s, shape = %s%s" % (var.name, var.shape, init_string))
 
             output_spec = None
 
@@ -559,8 +566,7 @@ class BertWorker(Process):
                 "start_logits": start_logits,
                 "end_logits": end_logits,
             }
-            output_spec = tf.contrib.tpu.TPUEstimatorSpec(
-                mode=mode, predictions=predictions, scaffold_fn=None)
+            output_spec = EstimatorSpec(mode=mode, predictions=predictions)
 
             return output_spec
 
@@ -571,8 +577,12 @@ class BertWorker(Process):
         # session-wise XLA doesn't seem to work on tf 1.10
         # if args.xla:
         #     config.graph_options.optimizer_options.global_jit_level = tf.OptimizerOptions.ON_1
+        
+        fn = model_fn
+        if self.squad:
+            fn = model_fn_squad
 
-        return Estimator(model_fn=model_fn, config=RunConfig(session_config=config))
+        return Estimator(model_fn=fn, config=RunConfig(session_config=config))
 
     def run(self):
         self._run()
@@ -597,15 +607,38 @@ class BertWorker(Process):
         sink_embed.connect(self.sink_address)
         sink_token.connect(self.sink_address)
         for r in estimator.predict(self.input_fn_builder(receivers, tf, sink_token), yield_single_examples=False):
-            logger.info('job done\tsize: %s\tclient: %s' % (r['encodes'].shape, r['client_id']))
-            client_id = r['client_id']
-            start_logits = [float(x) for x in r["start_logits"].flat]
-            end_logits = [float(x) for x in r["end_logits"].flat]
-            rawResult = run_squad.RawResult(
-                            unique_id=client_id,
-                            start_logits=start_logits,
-                            end_logits=end_logits)
-            send_ndarray(sink_embed, r['client_id'], r['encodes'], ServerCmd.data_embed)
+            logger.info('mission accomplished.')
+            if self.squad:
+                client_id = r['unique_ids']
+                logger.info('client id: %s' % client_id)
+                start_logits = [float(x) for x in r["start_logits"].flat]
+                logger.info('start logits length: %d' % len(start_logits))
+                end_logits = [float(x) for x in r["end_logits"].flat]
+                logger.info(f'end logits length: {len(end_logits)}')
+                logger.info('creating raw result')
+                rawResult = run_squad.RawResult(
+                                unique_id=client_id,
+                                start_logits=start_logits,
+                                end_logits=end_logits)
+                logger.info('writing predictions')
+                nbestOutput = run_squad.write_predictions(all_examples=self.eval_examples, 
+                                                          all_features=self.eval_features, 
+                                                          all_results=[rawResult],
+                                                          n_best_size=10, 
+                                                          max_answer_length=30,
+                                                          do_lower_case=True, 
+                                                          output_prediction_file=None,
+                                                          output_nbest_file=None, 
+                                                          output_null_log_odds_file=None,
+                                                          logger=logger)
+                logger.info(f"nbestOutput length: {len(nbestOutput)}")
+                logger.info('sending ndarray')
+                send_ndarray(sink_embed, r['client_id'], start_logits, ServerCmd.data_embed)
+            else:
+                logger.info('job done\tsize: %s\tclient: %s' % (r['encodes'].shape, r['client_id']))
+                send_ndarray(sink_embed, r['client_id'], r['encodes'], ServerCmd.data_embed)
+
+
             
 
     def input_fn_builder(self, socks, tf, sink):
@@ -636,10 +669,13 @@ class BertWorker(Process):
                         is_tokenized = all(isinstance(el, list) for el in msg)
 
                         logger.info('converting list to features...')
+                        self.eval_examples = []
                         tmp_f = list(convert_lst_to_features(msg, self.max_seq_len,
                                                              self.bert_config.max_position_embeddings,
                                                              tokenizer, logger,
+                                                             self.eval_examples,
                                                              is_tokenized, self.mask_cls_sep, is_squad=self.squad))
+                        self.eval_features = tmp_f
 
                         logger.info('converted list to features. len = %d' % (len(tmp_f)))
 
@@ -648,11 +684,18 @@ class BertWorker(Process):
                                                  b'', ServerCmd.data_token])
                         
                         if self.squad:
+                            logger.info("yielding client_id: %s" % client_id)
+                            input_ids = [f.input_ids for f in tmp_f]
+                            input_mask = [f.input_mask for f in tmp_f]
+                            segment_ids = [f.segment_ids for f in tmp_f]
+                            #logger.info(input_ids)
+                            #logger.info(input_mask)
+                            #logger.info(segment_ids)
                             yield {
                                 'client_id': client_id,
-                                'input_ids': [f.input_ids for f in tmp_f],
-                                'input_mask': [f.input_mask for f in tmp_f],
-                                'segment_ids': [f.segment_ids for f in tmp_f]
+                                'input_ids': input_ids,
+                                'input_mask': input_mask,
+                                'segment_ids': segment_ids
                             }
                         else:
                             yield {

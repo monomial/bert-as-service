@@ -64,11 +64,11 @@ def convert_lst_to_features_squad(lst_str, max_seq_length, max_position_embeddin
 
 
 def convert_lst_to_features(lst_str, max_seq_length, max_position_embeddings,
-                            tokenizer, logger, is_tokenized=False, mask_cls_sep=False, is_squad=False, doc_stride=128, max_query_length=64):
+                            tokenizer, logger, eval_examples, is_tokenized=False, mask_cls_sep=False, is_squad=False, doc_stride=128, max_query_length=64):
     """Loads a data file into a list of `InputBatch`s."""
 
     if is_squad:
-        eval_examples = []
+        #eval_examples = []
         read_squad_examples(lst_str, eval_examples)
 
         eval_features = []
@@ -215,8 +215,10 @@ def read_squad_examples(lst_strs, examples):
     char_to_word_offset = []
     doc_tokens = SquadHelper.convert_paragraph_text_to_doc_tokens(paragraph_text, char_to_word_offset)
     for ss in lst_strs:
-        #if unique_id == 0:
-        #    continue # paragraph text is the first string
+        unique_id = unique_id + 1
+
+        if unique_id == 1:
+            continue # paragraph text is the first string
 
         line = tokenization.convert_to_unicode(ss)
 
@@ -230,6 +232,8 @@ def read_squad_examples(lst_strs, examples):
             is_impossible=False)
 
         examples.append(example)
+
+        
 
 
 
