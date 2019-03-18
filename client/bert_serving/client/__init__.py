@@ -171,6 +171,13 @@ class BertClient(object):
         X = np.frombuffer(_buffer(arr_val), dtype=str(arr_info['dtype']))
         return Response(request_id, self.formatter(X.reshape(arr_info['shape'])), arr_info.get('tokens', ''))
 
+    def _recv_squad(self, wait_for_req_id=None):
+        """ receive the SQuAD response """
+        request_id, response = self._recv(wait_for_req_id)
+        arr_info, arr_val = jsonapi.loads(response[1]), response[2]
+        X = np.frombuffer(_buffer(arr_val), dtype=str(arr_info['dtype']))
+        return Response(request_id, self.formatter(X.reshape(arr_info['shape'])), arr_info.get('tokens', ''))
+
     @property
     def status(self):
         """
@@ -231,19 +238,12 @@ class BertClient(object):
         return jsonapi.loads(self._recv(req_id).content[1])
 
     @_timeout
-    def squad(self, texts, blocking=True, is_tokenized=False, show_tokens=False):
+    def squad(self, texts, is_tokenized=False, show_tokens=False):
         """ Answer a series of questions based on paragraph of text. """
         req_id = self._send(jsonapi.dumps(texts), len(texts))
-        if not blocking:
-            return None
-        r = self._recv_ndarray(req_id)
+        r = self._recv_squad(req_id)
         if self.token_info_available and show_tokens:
             return r.embedding, r.tokens
-        elif not self.token_info_available and show_tokens:
-            warnings.warn('"show_tokens=True", but the server does not support showing tokenization info to clients.\n'
-                          'here is what you can do:\n'
-                          '- start a new server with "bert-serving-start -show_tokens_to_client ..."\n'
-                          '- or, use "encode(show_tokens=False)"')
         return r.embedding
     
     @_timeout
