@@ -231,6 +231,22 @@ class BertClient(object):
         return jsonapi.loads(self._recv(req_id).content[1])
 
     @_timeout
+    def squad(self, texts, blocking=True, is_tokenized=False, show_tokens=False):
+        """ Answer a series of questions based on paragraph of text. """
+        req_id = self._send(jsonapi.dumps(texts), len(texts))
+        if not blocking:
+            return None
+        r = self._recv_ndarray(req_id)
+        if self.token_info_available and show_tokens:
+            return r.embedding, r.tokens
+        elif not self.token_info_available and show_tokens:
+            warnings.warn('"show_tokens=True", but the server does not support showing tokenization info to clients.\n'
+                          'here is what you can do:\n'
+                          '- start a new server with "bert-serving-start -show_tokens_to_client ..."\n'
+                          '- or, use "encode(show_tokens=False)"')
+        return r.embedding
+    
+    @_timeout
     def encode(self, texts, blocking=True, is_tokenized=False, show_tokens=False):
         """ Encode a list of strings to a list of vectors
 

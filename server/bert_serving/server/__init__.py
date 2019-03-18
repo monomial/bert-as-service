@@ -611,15 +611,17 @@ class BertWorker(Process):
         for r in estimator.predict(self.input_fn_builder(receivers, tf, sink_token), yield_single_examples=False):
             logger.info('mission accomplished.')
             if self.squad:
-                client_id = r['unique_ids']
+                unique_id = r['unique_ids'][0]
+                client_id = r['client_id']
                 logger.info('client id: %s' % client_id)
+                logger.info(f'unique id: {unique_id}')
                 start_logits = [float(x) for x in r["start_logits"].flat]
                 logger.info('start logits length: %d' % len(start_logits))
                 end_logits = [float(x) for x in r["end_logits"].flat]
                 logger.info(f'end logits length: {len(end_logits)}')
                 logger.info('creating raw result')
                 rawResult = run_squad.RawResult(
-                                unique_id=client_id,
+                                unique_id=unique_id,
                                 start_logits=start_logits,
                                 end_logits=end_logits)
                 logger.info('writing predictions')
@@ -635,7 +637,7 @@ class BertWorker(Process):
                                                           logger=logger)
                 logger.info(f"nbestOutput length: {len(nbestOutput)}")
                 logger.info('sending ndarray')
-                send_ndarray(sink_embed, r['client_id'], start_logits, ServerCmd.data_embed)
+                send_ndarray(sink_embed, r['client_id'], nbestOutput, ServerCmd.data_embed)
             else:
                 logger.info('job done\tsize: %s\tclient: %s' % (r['encodes'].shape, r['client_id']))
                 send_ndarray(sink_embed, r['client_id'], r['encodes'], ServerCmd.data_embed)

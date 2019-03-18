@@ -755,7 +755,7 @@ RawResult = collections.namedtuple("RawResult",
 
 def write_predictions(all_examples, all_features, all_results, n_best_size,
                       max_answer_length, do_lower_case, output_prediction_file,
-                      output_nbest_file, output_null_log_odds_file, logger=None):
+                      output_nbest_file, output_null_log_odds_file, logger=None, null_score_diff_threshold=-6):
   """Write final predictions to the json file and log-odds of null if needed."""
   if logger != None:
     logger.info(f'inside writing predictions. all_examples length: {len(all_examples)}  all_features length: {len(all_features)}  all_results length: {len(all_results)}')
@@ -901,7 +901,10 @@ def write_predictions(all_examples, all_features, all_results, n_best_size,
               end_logit=pred.end_logit))
 
     if logger != None:
-        logger.info('nbest created')
+        logger.info(f'nbest created')
+        logger.info(f'nbest length: {len(nbest)}')
+        for onebest in nbest:
+            logger.info(onebest.text)
     
     # if we didn't inlude the empty option in the n-best, inlcude it
     if True:
@@ -918,6 +921,9 @@ def write_predictions(all_examples, all_features, all_results, n_best_size,
 
     assert len(nbest) >= 1
 
+    if logger != None:
+      logger.info('building total scores')
+
     total_scores = []
     best_non_null_entry = None
     for entry in nbest:
@@ -926,6 +932,9 @@ def write_predictions(all_examples, all_features, all_results, n_best_size,
         if entry.text:
           best_non_null_entry = entry
 
+    if logger != None:
+      logger.info(f'computing softmax...')
+    
     probs = _compute_softmax(total_scores)
 
     nbest_json = []
@@ -939,6 +948,9 @@ def write_predictions(all_examples, all_features, all_results, n_best_size,
 
     assert len(nbest_json) >= 1
 
+    if logger != None:
+      logger.info('scoring predictions')
+
     if not True:
       all_predictions[example.qas_id] = nbest_json[0]["text"]
     else:
@@ -946,13 +958,16 @@ def write_predictions(all_examples, all_features, all_results, n_best_size,
       score_diff = score_null - best_non_null_entry.start_logit - (
           best_non_null_entry.end_logit)
       scores_diff_json[example.qas_id] = score_diff
-      if score_diff > FLAGS.null_score_diff_threshold:
+      if score_diff > null_score_diff_threshold:
         all_predictions[example.qas_id] = ""
       else:
         all_predictions[example.qas_id] = best_non_null_entry.text
 
     all_nbest_json[example.qas_id] = nbest_json
   
+  if logger != None:
+      logger.info('almost done')
+
   if output_prediction_file != None:
     with tf.gfile.GFile(output_prediction_file, "w") as writer:
       writer.write(json.dumps(all_predictions, indent=4) + "\n")
