@@ -243,8 +243,8 @@ class BertClient(object):
         req_id = self._send(jsonapi.dumps(texts), len(texts))
         r = self._recv_squad(req_id)
         if self.token_info_available and show_tokens:
-            return r.embedding, r.tokens
-        return r.embedding
+            return r.answers, r.tokens
+        return r.answers
     
     @_timeout
     def encode(self, texts, blocking=True, is_tokenized=False, show_tokens=False):

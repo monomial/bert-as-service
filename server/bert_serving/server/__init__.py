@@ -636,7 +636,7 @@ class BertWorker(Process):
                                                           output_null_log_odds_file=None,
                                                           logger=logger)
                 logger.info(f"nbestOutput length: {len(nbestOutput)}")
-                logger.info('sending ndarray')
+                logger.info('sending squad result')
                 send_ndarray(sink_embed, r['client_id'], nbestOutput, ServerCmd.data_embed)
             else:
                 logger.info('job done\tsize: %s\tclient: %s' % (r['encodes'].shape, r['client_id']))

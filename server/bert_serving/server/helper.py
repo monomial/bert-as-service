@@ -9,7 +9,7 @@ import zmq
 from termcolor import colored
 from zmq.utils import jsonapi
 
-__all__ = ['set_logger', 'send_ndarray', 'get_args_parser',
+__all__ = ['set_logger', 'send_ndarray', 'send_squad', 'get_args_parser',
            'check_tf_version', 'auto_bind', 'import_tf', 'TimeContext']
 
 
@@ -54,6 +54,10 @@ def send_ndarray(src, dest, X, req_id=b'', flags=0, copy=True, track=False):
     md = dict(dtype=str(X.dtype), shape=X.shape)
     return src.send_multipart([dest, jsonapi.dumps(md), X, req_id], flags, copy=copy, track=track)
 
+def send_squad(src, dest, X, req_id='', flags=0, copy=True, track=False):
+    """ send squad answers """
+    md = ''
+    return src.send_multipart([dest, jsonapi.dumps(md), X, req_id], flags, copy=copy, track=track)
 
 def check_max_seq_len(value):
     if value is None or value.lower() == 'none':
