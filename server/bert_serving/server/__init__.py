@@ -18,6 +18,7 @@ import zmq
 import zmq.decorators as zmqd
 from termcolor import colored
 from zmq.utils import jsonapi
+import json
 
 from .helper import *
 from .http import BertHTTPProxy
@@ -39,6 +40,7 @@ class ServerCmd:
     new_job = b'REGISTER'
     data_token = b'TOKENS'
     data_embed = b'EMBEDDINGS'
+    data_squad = b'SQUAD'
 
     @staticmethod
     def is_valid(cmd):
@@ -297,23 +299,33 @@ class BertSink(Process):
                 elif msg[3] == ServerCmd.data_token:
                     x = jsonapi.loads(msg[1])
                     pending_jobs[job_id].add_token(x, partial_id)
+                elif msg[3] == ServerCmd.data_squad:
+                    squad_info, squad_val = jsonapi.loads(msg[1]), jsonapi.loads(msg[2])
+                    x = squad_val
+                    print('data_squad pending job')
+                    pending_jobs[job_id].add_squad(x, partial_id)
                 else:
                     logger.error('received a wrongly-formatted request (expected 4 frames, got %d)' % len(msg))
                     logger.error('\n'.join('field %d: %s' % (idx, k) for idx, k in enumerate(msg)), exc_info=True)
 
-                logger.info('collect %s %s (E:%d/T:%d/A:%d)' % (msg[3], job_id,
+                logger.info('collect %s %s (E:%d/T:%d/S:%d/A:%d)' % (msg[3], job_id,
                                                                 pending_jobs[job_id].progress_embeds,
                                                                 pending_jobs[job_id].progress_tokens,
+                                                                pending_jobs[job_id].progress_squads,
                                                                 pending_jobs[job_id].checksum))
 
                 # check if there are finished jobs, then send it back to workers
 
                 finished = [(k, v) for k, v in pending_jobs.items() if v.is_done]
+
+                print(f'finished length = {len(finished)}')
                 for job_info, tmp in finished:
+                    print(f'job_info: {job_info} tmp: {tmp}')
                     client_addr, req_id = job_info.split(b'#')
                     x, x_info = tmp.result
+                    logger.info(f'sending back\tsize: %d\tjob id: %s' % (tmp.checksum, job_info))
                     sender.send_multipart([client_addr, x_info, x, req_id])
-                    logger.info('send back\tsize: %d\tjob id: %s' % (tmp.checksum, job_info))
+                    logger.info('sent back\tsize: %d\tjob id: %s' % (tmp.checksum, job_info))
                     # release the job
                     tmp.clear()
                     pending_jobs.pop(job_info)
@@ -334,12 +346,14 @@ class BertSink(Process):
 class SinkJob:
     def __init__(self, max_seq_len, max_position_embeddings, with_tokens, fixed_embed_length):
         self._pending_embeds = []
+        self._pending_squads = []
         self.tokens = []
         self.tokens_ids = []
         self.checksum = 0
         self.final_ndarray = None
         self.progress_tokens = 0
         self.progress_embeds = 0
+        self.progress_squads = 0
         self.with_tokens = with_tokens
         self.max_seq_len_unset = max_seq_len is None
         self.max_position_embeddings = max_position_embeddings
@@ -348,6 +362,7 @@ class SinkJob:
 
     def clear(self):
         self._pending_embeds.clear()
+        self._pending_squads.clear()
         self.tokens_ids.clear()
         self.tokens.clear()
         del self.final_ndarray
@@ -363,6 +378,11 @@ class SinkJob:
                 lo = mid + 1
         idx_lst.insert(lo, pid)
         data_lst.insert(lo, data)
+
+    def add_squad(self, data, pid):
+        """ add squad data """
+        progress = 1 # wtf is progress?
+        self._pending_squads.append((data, pid, progress))
 
     def add_embed(self, data, pid):
         def fill_data():
@@ -635,9 +655,14 @@ class BertWorker(Process):
                                                           output_nbest_file=None, 
                                                           output_null_log_odds_file=None,
                                                           logger=logger)
-                logger.info(f"nbestOutput length: {len(nbestOutput)}")
+                logger.info(f'calculated nbest, length = {len(nbestOutput)}')
+                firstNBestOutput = None
+                for k, v in nbestOutput.items():
+                    firstNBestOutput = v
+                logger.info(f"firstNBestOutput length: {len(firstNBestOutput)}")
+                logger.info(json.dumps(firstNBestOutput, indent=4))
                 logger.info('sending squad result')
-                send_ndarray(sink_embed, r['client_id'], nbestOutput, ServerCmd.data_embed)
+                send_squad(sink_embed, r['client_id'], firstNBestOutput, ServerCmd.data_squad)
             else:
                 logger.info('job done\tsize: %s\tclient: %s' % (r['encodes'].shape, r['client_id']))
                 send_ndarray(sink_embed, r['client_id'], r['encodes'], ServerCmd.data_embed)
