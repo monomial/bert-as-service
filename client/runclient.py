@@ -25,7 +25,8 @@ except ImportError:
 #        main()
 
 if __name__ == "__main__":
-    bc = BertClient()
-    encoded = bc.encode(['hello', 'world'])
+    bc = BertClient(check_version = False)
+    print('bert client initialized.')
+    print('sending squad text and questions')
     answers = bc.squad(['A woodchuck would chuck about 700 pounds of wood if a woodchuck could chuck wood.', 'How much wood would a woodchuck chuck if a woodchuck could chuck wood?'])
 

@@ -25,7 +25,7 @@ else:
     from ._py2_var import *
 
 _Response = namedtuple('_Response', ['id', 'content'])
-Response = namedtuple('Response', ['id', 'embedding', 'tokens'])
+Response = namedtuple('Response', ['id', 'embedding', 'tokens', 'answers'])
 
 
 class BertClient(object):
@@ -142,30 +142,40 @@ class BertClient(object):
 
     def _recv(self, wait_for_req_id=None):
         try:
+            print("_recv start")
             while True:
                 # a request has been returned and found in pending_response
                 if wait_for_req_id in self.pending_response:
+                    print('found response in pending response')
                     response = self.pending_response.pop(wait_for_req_id)
                     return _Response(wait_for_req_id, response)
 
                 # receive a response
                 response = self.receiver.recv_multipart()
+
+                print(f'response = {response}')
+
+                print(f'response[-1] = {response[-1]}')
                 request_id = int(response[-1])
 
                 # if not wait for particular response then simply return
                 if not wait_for_req_id or (wait_for_req_id == request_id):
+                    print(f'wait_for_req_id = {wait_for_req_id} request_id = {request_id}')
                     self.pending_request.remove(request_id)
                     return _Response(request_id, response)
                 elif wait_for_req_id != request_id:
+                    print(f'pending response....')
                     self.pending_response[request_id] = response
                     # wait for the next response
         except Exception as e:
             raise e
         finally:
+            print('_recv finally')
             if wait_for_req_id in self.pending_request:
                 self.pending_request.remove(wait_for_req_id)
 
     def _recv_ndarray(self, wait_for_req_id=None):
+        print('receiving ndarray')
         request_id, response = self._recv(wait_for_req_id)
         arr_info, arr_val = jsonapi.loads(response[1]), response[2]
         X = np.frombuffer(_buffer(arr_val), dtype=str(arr_info['dtype']))
@@ -173,10 +183,16 @@ class BertClient(object):
 
     def _recv_squad(self, wait_for_req_id=None):
         """ receive the SQuAD response """
-        request_id, response = self._recv(wait_for_req_id)
-        arr_info, arr_val = jsonapi.loads(response[1]), response[2]
-        X = np.frombuffer(_buffer(arr_val), dtype=str(arr_info['dtype']))
-        return Response(request_id, self.formatter(X.reshape(arr_info['shape'])), arr_info.get('tokens', ''))
+        print(f'receiving squad response... {wait_for_req_id}')
+        try:
+            request_id, response = self._recv(wait_for_req_id)
+        except:
+            print('error')
+        else:
+            print('received squad response.')
+            print(f'response[2]: {response[2]}')
+            arr_val = jsonapi.loads(response[2])
+            return Response(request_id, None, arr_info.get('tokens', ''), arr_val)
 
     @property
     def status(self):
