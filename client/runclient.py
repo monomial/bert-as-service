@@ -29,4 +29,5 @@ if __name__ == "__main__":
     print('bert client initialized.')
     print('sending squad text and questions')
     answers = bc.squad(['A woodchuck would chuck about 700 pounds of wood if a woodchuck could chuck wood.', 'How much wood would a woodchuck chuck if a woodchuck could chuck wood?'])
-
+    for answer in answers:
+        print(f'answer: {answer["text"]} {answer["probability"]}')

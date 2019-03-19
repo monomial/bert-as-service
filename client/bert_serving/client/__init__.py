@@ -192,7 +192,7 @@ class BertClient(object):
             print('received squad response.')
             print(f'response[2]: {response[2]}')
             arr_val = jsonapi.loads(response[2])
-            return Response(request_id, None, arr_info.get('tokens', ''), arr_val)
+            return Response(request_id, None, '', arr_val)
 
     @property
     def status(self):
