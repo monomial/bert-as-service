@@ -784,8 +784,8 @@ def write_predictions(all_examples, all_features, all_results, n_best_size,
   scores_diff_json = collections.OrderedDict()
 
   for (example_index, example) in enumerate(all_examples):
-    if logger != None:
-        logger.info('inside writing predictions for loop')
+    #if logger != None:
+    #logger.info('inside writing predictions for loop')
 
     features = example_index_to_features[example_index]
 
@@ -796,15 +796,15 @@ def write_predictions(all_examples, all_features, all_results, n_best_size,
     null_start_logit = 0  # the start logit at the slice with min null score
     null_end_logit = 0  # the end logit at the slice with min null score
     for (feature_index, feature) in enumerate(features):
-      if logger != None:
-        logger.info(f'inside enumerate features loop index: {feature_index} unique_id: {feature.unique_id}')
+      #if logger != None:
+      #logger.info(f'inside enumerate features loop index: {feature_index} unique_id: {feature.unique_id}')
       result = unique_id_to_result[feature.unique_id]
-      if logger != None:
-        logger.info(f'result: {result}')
+      #if logger != None:
+      #logger.info(f'result: {result}')
       start_indexes = _get_best_indexes(result.start_logits, n_best_size)
       end_indexes = _get_best_indexes(result.end_logits, n_best_size)
-      if logger != None:
-        logger.info(f'start indices: {start_indexes}  end_indices: {end_indexes}')
+      #if logger != None:
+      #logger.info(f'start indices: {start_indexes}  end_indices: {end_indexes}')
       # if we could have irrelevant answers, get the min score of irrelevant
       if True:
         feature_null_score = result.start_logits[0] + result.end_logits[0]
@@ -815,8 +815,8 @@ def write_predictions(all_examples, all_features, all_results, n_best_size,
           null_end_logit = result.end_logits[0]
 
       for start_index in start_indexes:
-        if logger != None:
-          logger.info(f'inside start_indexes loop, index = {start_index}')
+        #if logger != None:
+        #logger.info(f'inside start_indexes loop, index = {start_index}')
         for end_index in end_indexes:
           # We could hypothetically create invalid predictions, e.g., predict
           # that the start of the span is in the question. We throw out all
@@ -857,8 +857,8 @@ def write_predictions(all_examples, all_features, all_results, n_best_size,
         key=lambda x: (x.start_logit + x.end_logit),
         reverse=True)
 
-    if logger != None:
-        logger.info('prelim predictions sorted')
+    #if logger != None:
+    #logger.info('prelim predictions sorted')
 
     _NbestPrediction = collections.namedtuple(  # pylint: disable=invalid-name
         "NbestPrediction", ["text", "start_logit", "end_logit"])
@@ -903,8 +903,8 @@ def write_predictions(all_examples, all_features, all_results, n_best_size,
     if logger != None:
         logger.info(f'nbest created')
         logger.info(f'nbest length: {len(nbest)}')
-        for onebest in nbest:
-            logger.info(onebest.text)
+        #for onebest in nbest:
+        #logger.info(onebest.text)
     
     # if we didn't inlude the empty option in the n-best, inlcude it
     if True:
@@ -921,8 +921,8 @@ def write_predictions(all_examples, all_features, all_results, n_best_size,
 
     assert len(nbest) >= 1
 
-    if logger != None:
-      logger.info('building total scores')
+    #if logger != None:
+    #logger.info('building total scores')
 
     total_scores = []
     best_non_null_entry = None
@@ -932,8 +932,8 @@ def write_predictions(all_examples, all_features, all_results, n_best_size,
         if entry.text:
           best_non_null_entry = entry
 
-    if logger != None:
-      logger.info(f'computing softmax...')
+    #if logger != None:
+    #logger.info(f'computing softmax...')
     
     probs = _compute_softmax(total_scores)
 
@@ -948,8 +948,8 @@ def write_predictions(all_examples, all_features, all_results, n_best_size,
 
     assert len(nbest_json) >= 1
 
-    if logger != None:
-      logger.info('scoring predictions')
+    #if logger != None:
+    #logger.info('scoring predictions')
 
     if not True:
       all_predictions[example.qas_id] = nbest_json[0]["text"]
@@ -965,8 +965,8 @@ def write_predictions(all_examples, all_features, all_results, n_best_size,
 
     all_nbest_json[example.qas_id] = nbest_json
   
-  if logger != None:
-      logger.info('almost done')
+  #if logger != None:
+  #logger.info('almost done')
 
   if output_prediction_file != None:
     with tf.gfile.GFile(output_prediction_file, "w") as writer:

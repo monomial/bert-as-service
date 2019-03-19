@@ -56,8 +56,8 @@ def send_ndarray(src, dest, X, req_id=b'', flags=0, copy=True, track=False):
 
 def send_squad(src, dest, X, req_id='', flags=0, copy=True, track=False):
     """ send squad answers """
-    print('inside send_squad')
-    print(f'jsonapi.dumps(X) = {jsonapi.dumps(X)}')
+    #print('inside send_squad')
+    #print(f'jsonapi.dumps(X) = {jsonapi.dumps(X)}')
     return src.send_multipart([dest, jsonapi.dumps(''), jsonapi.dumps(X), req_id], flags, copy=copy, track=track)
 
 def check_max_seq_len(value):

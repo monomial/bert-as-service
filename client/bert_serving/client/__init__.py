@@ -153,7 +153,7 @@ class BertClient(object):
                 # receive a response
                 response = self.receiver.recv_multipart()
 
-                print(f'response = {response}')
+                #print(f'response = {response}')
 
                 print(f'response[-1] = {response[-1]}')
                 request_id = int(response[-1])
@@ -190,7 +190,6 @@ class BertClient(object):
             print('error')
         else:
             print('received squad response.')
-            print(f'response[2]: {response[2]}')
             arr_val = jsonapi.loads(response[2])
             return Response(request_id, None, '', arr_val)
 

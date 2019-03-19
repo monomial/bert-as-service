@@ -302,7 +302,7 @@ class BertSink(Process):
                 elif msg[3] == ServerCmd.data_squad:
                     squad_info, squad_val = jsonapi.loads(msg[1]), jsonapi.loads(msg[2])
                     x = squad_val
-                    print('data_squad pending job')
+                    print('data_squad pending job', flush = True)
                     pending_jobs[job_id].add_squad(x, partial_id)
                 else:
                     logger.error('received a wrongly-formatted request (expected 4 frames, got %d)' % len(msg))
@@ -324,6 +324,7 @@ class BertSink(Process):
                     client_addr, req_id = job_info.split(b'#')
                     x, x_info = tmp.result
                     logger.info(f'sending back\tsize: %d\tjob id: %s' % (tmp.checksum, job_info))
+                    #logger.info(f'x_info = {x_info} x = {x}')
                     sender.send_multipart([client_addr, x_info, x, req_id])
                     logger.info('sent back\tsize: %d\tjob id: %s' % (tmp.checksum, job_info))
                     # release the job
@@ -351,6 +352,7 @@ class SinkJob:
         self.tokens_ids = []
         self.checksum = 0
         self.final_ndarray = None
+        self.final_squad = None
         self.progress_tokens = 0
         self.progress_embeds = 0
         self.progress_squads = 0
@@ -381,8 +383,8 @@ class SinkJob:
 
     def add_squad(self, data, pid):
         """ add squad data """
-        progress = 1 # wtf is progress?
-        self._pending_squads.append((data, pid, progress))
+        print('adding final squad')
+        self.final_squad = data
 
     def add_embed(self, data, pid):
         def fill_data():
@@ -414,18 +416,28 @@ class SinkJob:
 
     @property
     def is_done(self):
-        if self.with_tokens:
+        if self.final_squad:
+            return True
+        elif self.with_tokens:
             return self.checksum > 0 and self.checksum == self.progress_tokens and self.checksum == self.progress_embeds
         else:
             return self.checksum > 0 and self.checksum == self.progress_embeds
 
     @property
     def result(self):
-        if self.max_seq_len_unset and not self.fixed_embed_length:
+        if self.final_squad:
+            x = jsonapi.dumps(self.final_squad)
+        elif self.max_seq_len_unset and not self.fixed_embed_length:
             x = np.ascontiguousarray(self.final_ndarray[:, 0:self.max_effective_len])
         else:
             x = self.final_ndarray
-        x_info = {'dtype': str(x.dtype),
+
+        if self.final_squad:
+            x_info = {'dtype': '',
+                      'shape': '',
+                      'tokens': ''}
+        else:
+            x_info = {'dtype': str(x.dtype),
                   'shape': x.shape,
                   'tokens': list(chain.from_iterable(self.tokens)) if self.with_tokens else ''}
 
@@ -660,7 +672,7 @@ class BertWorker(Process):
                 for k, v in nbestOutput.items():
                     firstNBestOutput = v
                 logger.info(f"firstNBestOutput length: {len(firstNBestOutput)}")
-                logger.info(json.dumps(firstNBestOutput, indent=4))
+                #logger.info(json.dumps(firstNBestOutput, indent=4))
                 logger.info('sending squad result')
                 send_squad(sink_embed, r['client_id'], firstNBestOutput, ServerCmd.data_squad)
             else:
