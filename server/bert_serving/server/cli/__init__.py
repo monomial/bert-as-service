@@ -1,6 +1,6 @@
 def main():
-    from bert_serving.server import BertServer
-    from bert_serving.server.helper import get_run_args
+    from .. import BertServer
+    from ..helper import get_run_args
     args = get_run_args()
     server = BertServer(args)
     server.start()
