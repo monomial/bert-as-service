@@ -17,7 +17,7 @@ from zmq.utils import jsonapi
 __all__ = ['__version__', 'BertClient', 'ConcurrentBertClient']
 
 # in the future client version must match with server version
-__version__ = '1.8.3'
+__version__ = '1.8.6'
 
 if sys.version_info >= (3, 0):
     from ._py3_var import *
@@ -102,6 +102,7 @@ class BertClient(object):
         self.port_out = port_out
         self.ip = ip
         self.length_limit = 0
+        self.token_info_available = False
 
         if not ignore_all_checks and (check_version or show_server_config or check_length or check_token_info):
             s_status = self.server_status
@@ -364,7 +365,7 @@ class BertClient(object):
             tmp = list(self.fetch())
             if sort:
                 tmp = sorted(tmp, key=lambda v: v.id)
-            tmp = [v.content for v in tmp]
+            tmp = [v.embedding for v in tmp]
             if concat:
                 if self.output_fmt == 'ndarray':
                     tmp = np.concatenate(tmp, axis=0)
