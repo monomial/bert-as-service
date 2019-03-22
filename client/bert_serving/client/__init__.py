@@ -504,6 +504,10 @@ class ConcurrentBertClient(BertClient):
     def encode(self, **kwargs):
         pass
 
+    @_concurrent
+    def squad(self, **kwargs):
+        pass
+
     @property
     @_concurrent
     def server_status(self):

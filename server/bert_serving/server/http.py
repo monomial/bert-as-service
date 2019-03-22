@@ -39,6 +39,11 @@ class BertHTTPProxy(Process):
         def get_client_status():
             return bc.status
 
+        #@app.route('/status/version', method=['GET'])
+        #@as_json
+        #def get_client_version():
+        #    return bc.version
+
         @app.route('/encode', methods=['POST'])
         @as_json
         def encode_query():
@@ -49,6 +54,18 @@ class BertHTTPProxy(Process):
                         'result': bc.encode(data['texts'], is_tokenized=bool(
                             data['is_tokenized']) if 'is_tokenized' in data else False)}
 
+            except Exception as e:
+                logger.error('error when handling HTTP request', exc_info=True)
+                raise JsonError(description=str(e), type=str(type(e).__name__))
+
+        @app.route('/squad', methods=['POST'])
+        @as_json
+        def squad_query():
+            data = request.form if request.form else request.json
+            try:
+                logger.info('new squad request from %s' % request.remote_addr)
+                result = bc.squad(data['texts'])
+                return {'id': data['id'], 'result': result }
             except Exception as e:
                 logger.error('error when handling HTTP request', exc_info=True)
                 raise JsonError(description=str(e), type=str(type(e).__name__))
